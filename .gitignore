@@ -1,0 +1,17 @@
+# .gitignore
+
+# Audit logs (contain PII - GDPR violation if public)
+logs/
+*.log
+
+# Credentials (never ever)
+*.pfx
+*.key
+secrets.ps1
+config.local.ps1
+
+# VS Code local settings
+.vscode/settings.json
+
+# PowerShell temp files
+*.ps1xml
