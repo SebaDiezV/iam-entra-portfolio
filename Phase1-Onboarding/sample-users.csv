@@ -1,1 +1,6 @@
-
+FirstName,LastName,Department,JobTitle,Country,CountryCode,OfficeLocation,Manager
+Laura,González,Finance,Financial Analyst,Chile,CL,Santiago,admin@yourtenant.onmicrosoft.com
+Matías,Fernández,IT,Systems Engineer,Chile,CL,Santiago,admin@yourtenant.onmicrosoft.com
+Sophie,Müller,Legal,Legal Counsel,Germany,DE,Berlin,admin@yourtenant.onmicrosoft.com
+Luca,Rossi,HR,HR Business Partner,Italy,IT,Milan,admin@yourtenant.onmicrosoft.com
+Emma,Dubois,Finance,Compliance Officer,France,FR,Paris,admin@yourtenant.onmicrosoft.com
