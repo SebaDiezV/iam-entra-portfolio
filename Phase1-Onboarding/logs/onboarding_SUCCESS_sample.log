@@ -1,0 +1,32 @@
+[2026-05-06T11:49:07] [INFO] === ONBOARDING SESSION STARTED ===
+[2026-05-06T11:49:07] [INFO] Log file: C:\Users\ingesoft_user\IAM\Proyectos Entra\iam-entra-portfolio\Phase1-Onboarding\logs\onboarding_20260506_114907.log
+[2026-05-06T11:49:07] [INFO] Connecting to Microsoft Graph...
+[2026-05-06T11:49:07] [SUCCESS] Authenticated as: sdiez@proyectoiam.onmicrosoft.com
+[2026-05-06T11:49:07] [INFO] CSV loaded: 5 users to process from C:\Users\ingesoft_user\IAM\Proyectos Entra\iam-entra-portfolio\Phase1-Onboarding\sample-users.csv
+[2026-05-06T11:49:07] [INFO] Processing user: laura.gonzalez@proyectoiam.onmicrosoft.com | Dept: Finance | Country: Chile
+[2026-05-06T11:49:08] [SUCCESS] User created: laura.gonzalez@proyectoiam.onmicrosoft.com | ObjectId: 44d2e516-8454-4733-8df0-49aac66c029d
+[2026-05-06T11:49:09] [SUCCESS] User 44d2e516-8454-4733-8df0-49aac66c029d added to group 'SG-Finance-Users'
+[2026-05-06T11:49:10] [SUCCESS] User 44d2e516-8454-4733-8df0-49aac66c029d added to group 'SG-Region-Chile'
+[2026-05-06T11:49:10] [INFO] Processing user: matias.fernandez@proyectoiam.onmicrosoft.com | Dept: IT | Country: Chile
+[2026-05-06T11:49:11] [SUCCESS] User created: matias.fernandez@proyectoiam.onmicrosoft.com | ObjectId: f5c2b141-1706-4d6c-ac1b-8d877fcb03bc
+[2026-05-06T11:49:12] [SUCCESS] User f5c2b141-1706-4d6c-ac1b-8d877fcb03bc added to group 'SG-IT-Users'
+[2026-05-06T11:49:13] [SUCCESS] User f5c2b141-1706-4d6c-ac1b-8d877fcb03bc added to group 'SG-Region-Chile'
+[2026-05-06T11:49:14] [INFO] Processing user: sophie.muller@proyectoiam.onmicrosoft.com | Dept: Legal | Country: Germany
+[2026-05-06T11:49:14] [SUCCESS] User created: sophie.muller@proyectoiam.onmicrosoft.com | ObjectId: d1752ac3-b183-436b-9286-fc5cbddf05d0
+[2026-05-06T11:49:14] [INFO] EU resident detected (DE). Adding to GDPR group.
+[2026-05-06T11:49:15] [SUCCESS] User d1752ac3-b183-436b-9286-fc5cbddf05d0 added to group 'SG-Legal-Users'
+[2026-05-06T11:49:16] [SUCCESS] User d1752ac3-b183-436b-9286-fc5cbddf05d0 added to group 'SG-GDPR-EUResidents'
+[2026-05-06T11:49:17] [INFO] Processing user: luca.rossi@proyectoiam.onmicrosoft.com | Dept: HR | Country: Italy
+[2026-05-06T11:49:18] [SUCCESS] User created: luca.rossi@proyectoiam.onmicrosoft.com | ObjectId: 0db7974c-c9df-4f43-be4e-63c09f0fc6fc
+[2026-05-06T11:49:18] [INFO] EU resident detected (IT). Adding to GDPR group.
+[2026-05-06T11:49:19] [SUCCESS] User 0db7974c-c9df-4f43-be4e-63c09f0fc6fc added to group 'SG-HR-Users'
+[2026-05-06T11:49:20] [SUCCESS] User 0db7974c-c9df-4f43-be4e-63c09f0fc6fc added to group 'SG-GDPR-EUResidents'
+[2026-05-06T11:49:20] [INFO] Processing user: emma.dubois@proyectoiam.onmicrosoft.com | Dept: Finance | Country: France
+[2026-05-06T11:49:21] [SUCCESS] User created: emma.dubois@proyectoiam.onmicrosoft.com | ObjectId: 984b3e82-7a29-442d-bce2-f0ffeac6e37e
+[2026-05-06T11:49:21] [INFO] EU resident detected (FR). Adding to GDPR group.
+[2026-05-06T11:49:22] [SUCCESS] User 984b3e82-7a29-442d-bce2-f0ffeac6e37e added to group 'SG-Finance-Users'
+[2026-05-06T11:49:23] [SUCCESS] User 984b3e82-7a29-442d-bce2-f0ffeac6e37e added to group 'SG-GDPR-EUResidents'
+[2026-05-06T11:49:24] [INFO] === ONBOARDING SESSION COMPLETED ===
+[2026-05-06T11:49:24] [INFO] Results — Success: 5 | Skipped: 0 | Failed: 0
+[2026-05-06T11:49:24] [INFO] Audit log: C:\Users\ingesoft_user\IAM\Proyectos Entra\iam-entra-portfolio\Phase1-Onboarding\logs\onboarding_20260506_114907.log
+[2026-05-06T11:49:24] [INFO] Graph session disconnected.
