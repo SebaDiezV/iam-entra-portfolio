@@ -25,21 +25,31 @@
 # ============================================================
 # REGION 1: CONFIGURATION
 # ============================================================
-# Centralizamos toda la configuración en un bloque.
-# Esto es una buena práctica: si cambias el tenant o rutas,
-# solo modificas este bloque, no todo el script.
+
+# Timestamp global de sesión — un solo archivo de log por ejecución
+$script:LogTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+
+# Rutas absolutas usando $PSScriptRoot (directorio donde está el script)
+# Esto garantiza que funciona sin importar desde dónde se ejecute
+$script:LogDir  = Join-Path $PSScriptRoot "logs"
+$script:LogFile = Join-Path $script:LogDir "onboarding_$($script:LogTimestamp).log"
+
+# Crear directorio de logs si no existe
+if (-not (Test-Path $script:LogDir)) {
+    New-Item -ItemType Directory -Path $script:LogDir -Force | Out-Null
+}
+
+# Crear el archivo de log vacío para garantizar que existe antes de escribir
+New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 
 $Config = @{
     TenantId       = "25de3db3-c870-4699-be4e-bc4322e9d249"
-    LogPath        = ".\logs\onboarding_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-    CsvPath        = ".\sample-users.csv"
+    CsvPath        = Join-Path $PSScriptRoot "sample-users.csv"  # ruta absoluta
     DefaultDomain  = "proyectoiam.onmicrosoft.com"
     PasswordLength = 16
 }
 
-# Mapeo Departamento → Grupo de Seguridad
-# Esto implementa LEAST PRIVILEGE: cada depto tiene exactamente
-# los permisos que necesita, sin más. Es el corazón del Art. 25 GDPR.
+# Mapeo Departamento → Grupo de Seguridad (Least Privilege — GDPR Art. 25)
 $DepartmentGroupMap = @{
     "Finance" = "SG-Finance-Users"
     "IT"      = "SG-IT-Users"
@@ -47,33 +57,14 @@ $DepartmentGroupMap = @{
     "HR"      = "SG-HR-Users"
 }
 
-# Países de la UE relevantes para GDPR
-# Cualquier usuario con estos códigos irá TAMBIÉN al grupo SG-GDPR-EUResidents
+# Códigos de países UE — usuarios con estos códigos van al grupo GDPR
 $EUCountryCodes = @("DE", "FR", "IT", "ES", "PT", "NL", "BE", "AT", "PL", "SE")
 
 # ============================================================
-# REGION 2: LOGGING FUNCTION (GDPR Art. 30)
+# REGION 2: AUDIT LOG FUNCTION (GDPR Art. 30)
 # ============================================================
-# Art. 30 GDPR exige un "registro de actividades de tratamiento".
-# Esta función escribe CADA acción en un archivo de log con timestamp.
-# En una auditoría, este log demuestra QUÉ datos se procesaron,
-# CUÁNDO y CON QUÉ resultado.
-
-function Write-AuditLog {
-    param(
-        [string]$Message,
-        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR")]
-        [string]$Level = "INFO"
-    )
-}
-
-# ============================================================
-# REGION 2: LOGGING FUNCTION (GDPR Art. 30)
-# ============================================================
-# Art. 30 GDPR exige un "registro de actividades de tratamiento".
-# Esta función escribe CADA acción en un archivo de log con timestamp.
-# En una auditoría, este log demuestra QUÉ datos se procesaron,
-# CUÁNDO y CON QUÉ resultado.
+# Una sola definición, usando $script:LogFile (ruta absoluta)
+# Art. 30 GDPR: registro de actividades de tratamiento con timestamp ISO 8601
 
 function Write-AuditLog {
     param(
@@ -82,122 +73,111 @@ function Write-AuditLog {
         [string]$Level = "INFO"
     )
 
-        # Escribir en consola con color según severidad
+    $Timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
+    $LogEntry  = "[$Timestamp] [$Level] $Message"
+
     $Color = switch ($Level) {
         "SUCCESS" { "Green" }
         "WARNING" { "Yellow" }
         "ERROR"   { "Red" }
         default   { "Cyan" }
     }
-        Write-Host $LogEntry -ForegroundColor $Color
 
-    # Escribir en archivo (persistencia para auditoría)
-    # GDPR requiere que estos logs se mantengan y protejan
-    Add-Content -Path $Config.LogPath -Value $LogEntry
+    Write-Host $LogEntry -ForegroundColor $Color
+    Add-Content -Path $script:LogFile -Value $LogEntry -Encoding UTF8
 }
 
 # ============================================================
-# REGION 3: PASSWORD GENERATION (GDPR Art. 5 - Confidentiality)
+# REGION 3: HELPER FUNCTIONS
 # ============================================================
-# Art. 5(1)(f) requiere "integridad y confidencialidad".
-# Generamos passwords seguros con complejidad suficiente.
-# NUNCA hardcodeamos passwords en el script (mala práctica crítica).
 
+# Remove-Diacritics: convierte González→gonzalez, Müller→muller
+# Necesario porque Entra ID no acepta caracteres no-ASCII en UPNs
+function Remove-Diacritics {
+    param([string]$Text)
+    $Normalized = $Text.Normalize([System.Text.NormalizationForm]::FormD)
+    $Builder = [System.Text.StringBuilder]::new()
+    foreach ($Char in $Normalized.ToCharArray()) {
+        $Category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($Char)
+        if ($Category -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$Builder.Append($Char)
+        }
+    }
+    return $Builder.ToString().Normalize([System.Text.NormalizationForm]::FormC)
+}
+
+# New-SecureTemporaryPassword: generador criptográficamente seguro
+# Art. 5(1)(f) GDPR: integridad y confidencialidad
+# Usamos RNGCryptoServiceProvider — Math.Random() NO es seguro para passwords
 function New-SecureTemporaryPassword {
-    # Usamos RNGCryptoServiceProvider — generador criptográficamente seguro.
-    # Math.Random() o Get-Random simple NO son seguros para passwords.
     $Chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789!@#$%^&*"
     $Bytes = New-Object Byte[] $Config.PasswordLength
-    $Rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    $Rng   = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
     $Rng.GetBytes($Bytes)
-
-    # Mapeamos cada byte a un carácter del set permitido
     $Password = ($Bytes | ForEach-Object { $Chars[$_ % $Chars.Length] }) -join ''
-
-    # Convertimos a SecureString — PowerShell nunca expone el valor en memoria
     return ConvertTo-SecureString $Password -AsPlainText -Force
 }
 
 # ============================================================
 # REGION 4: USER CREATION FUNCTION
 # ============================================================
-# Esta función crea UN usuario. La llamaremos en bucle desde el main.
-# Separar la lógica en funciones es crucial para:
-# - Reutilización (puedes llamarla desde otros scripts)
-# - Testing (puedes probar con un solo usuario)
-# - Mantenibilidad (si Entra ID cambia una API, solo editas aquí)
 
 function New-OnboardingUser {
     param(
         [Parameter(Mandatory)]
-        [PSCustomObject]$UserData  # Un objeto con los campos del CSV
+        [PSCustomObject]$UserData
     )
-        # --- Construimos el UPN (User Principal Name) ---
-    # Formato estándar empresarial: nombre.apellido@dominio
-    # Convertimos a minúsculas y eliminamos espacios (normalize)
-    $FirstName = $UserData.FirstName.Trim().ToLower()
-    $LastName = $UserData.LastName.Trim().ToLower()
-    $UPN = "$FirstName.$LastName@$($Config.DefaultDomain)"
+
+    # Normalizar nombre y apellido para construir UPN válido
+    $FirstName = (Remove-Diacritics $UserData.FirstName.Trim()).ToLower()
+    $LastName  = (Remove-Diacritics $UserData.LastName.Trim()).ToLower()
+    $UPN       = "$FirstName.$LastName@$($Config.DefaultDomain)"
 
     Write-AuditLog "Processing user: $UPN | Dept: $($UserData.Department) | Country: $($UserData.Country)"
 
-    # --- Verificar si el usuario ya existe ---
-    # Idempotencia: el script puede correr múltiples veces sin duplicar usuarios.
-    # Esto es importante para GDPR: no queremos crear datos duplicados (Art. 5 - exactitud).
+    # Idempotencia: verificar si el usuario ya existe antes de crear
+    # GDPR Art. 5(d): exactitud — evitamos duplicados
     try {
         $ExistingUser = Get-MgUser -UserId $UPN -ErrorAction SilentlyContinue
         if ($ExistingUser) {
             Write-AuditLog "User $UPN already exists. Skipping creation." -Level "WARNING"
-            return $ExistingUser  # Retornamos el usuario existente para asignarlo a grupos
+            return $ExistingUser
         }
     } catch {
-        # Si el error NO es "user not found", lo registramos
         if ($_.Exception.Message -notmatch "Request_ResourceNotFound") {
-            Write-AuditLog "Unexpected error checking user $UPN`: $_" -Level "ERROR"
+            Write-AuditLog "Unexpected error checking $UPN`: $_" -Level "ERROR"
             return $null
         }
     }
 
-    # --- Construir el objeto de usuario para Microsoft Graph ---
-    # Cada propiedad tiene un propósito específico:
+    # FIX CRÍTICO: $TempPassword se genera ANTES del hashtable $UserParams
+    # Una asignación de variable dentro de @{} es sintaxis inválida en PowerShell
     $TempPassword = New-SecureTemporaryPassword | ConvertFrom-SecureString -AsPlainText
+
     $UserParams = @{
-        DisplayName         = "$($UserData.FirstName) $($UserData.LastName)"
-        GivenName           = $UserData.FirstName.Trim()
-        Surname             = $UserData.LastName.Trim()
-        UserPrincipalName   = $UPN
-        MailNickname        = "$FirstName.$LastName"  # alias interno sin @dominio
-
-        Department          = $UserData.Department
-        JobTitle            = $UserData.JobTitle
-        OfficeLocation      = $UserData.OfficeLocation
-
-        # UsageLocation es OBLIGATORIO para asignar licencias M365.
-        # Para GDPR: determina la jurisdicción del usuario (UE vs no-UE).
-        # Formato: ISO 3166-1 alpha-2 (CL, DE, FR, etc.)
-        UsageLocation       = $UserData.CountryCode.Trim().ToUpper()
-
-        # Country es el nombre completo (para display), CountryCode para lógica
-        Country             = $UserData.Country.Trim()
-
-        AccountEnabled      = $true
-
-        $TempPassword = New-SecureTemporaryPassword | ConvertFrom-SecureString -AsPlainText
-        PasswordProfile     = @{
-            Password                             = $TempPassword
-            ForceChangePasswordNextSignIn        = $true   # Obligatorio por seguridad
+        DisplayName       = "$($UserData.FirstName.Trim()) $($UserData.LastName.Trim())"
+        GivenName         = $UserData.FirstName.Trim()
+        Surname           = $UserData.LastName.Trim()
+        UserPrincipalName = $UPN
+        MailNickname      = "$FirstName.$LastName"
+        Department        = $UserData.Department
+        JobTitle          = $UserData.JobTitle
+        OfficeLocation    = $UserData.OfficeLocation
+        UsageLocation     = $UserData.CountryCode.Trim().ToUpper()
+        Country           = $UserData.Country.Trim()
+        AccountEnabled    = $true
+        PasswordProfile   = @{
+            Password                      = $TempPassword
+            ForceChangePasswordNextSignIn = $true
         }
     }
 
-    # --- Crear el usuario via Microsoft Graph ---
     try {
         $NewUser = New-MgUser @UserParams
         Write-AuditLog "User created: $UPN | ObjectId: $($NewUser.Id)" -Level "SUCCESS"
         return $NewUser
-
     } catch {
-        # Capturamos el error específico y lo registramos en el audit log
-        Write-AuditLog "FAILED to create user $UPN`: $($_.Exception.Message)" -Level "ERROR"
+        Write-AuditLog "FAILED to create $UPN`: $($_.Exception.Message)" -Level "ERROR"
         return $null
     }
 }
@@ -205,60 +185,51 @@ function New-OnboardingUser {
 # ============================================================
 # REGION 5: GROUP ASSIGNMENT (LEAST PRIVILEGE — GDPR Art. 25)
 # ============================================================
-# Art. 25 GDPR: "Privacy by Design and by Default"
-# Significa que el acceso mínimo es el DEFAULT, no una opción.
-# Un usuario nuevo NO tiene acceso a nada hasta que se le asigna explícitamente.
 
 function Add-UserToGroups {
     param(
-        [string]$UserId,        # ObjectId del usuario en Entra ID
+        [string]$UserId,
         [string]$Department,
         [string]$CountryCode
     )
 
-    # Lista de grupos a los que asignaremos al usuario
     $GroupsToAssign = @()
 
-    # 1. Grupo por departamento (Least Privilege por rol)
+    # Grupo por departamento
     if ($DepartmentGroupMap.ContainsKey($Department)) {
         $GroupsToAssign += $DepartmentGroupMap[$Department]
     } else {
-        Write-AuditLog "No group mapping for department '$Department'. User will have minimal access." -Level "WARNING"
+        Write-AuditLog "No group mapping for '$Department'. Minimal access applied." -Level "WARNING"
     }
 
-    # 2. Grupo regional (para políticas de Acceso Condicional por ubicación)
+    # Grupo regional Chile
     if ($CountryCode -eq "CL") {
         $GroupsToAssign += "SG-Region-Chile"
     }
-        # 3. Grupo GDPR si es residente en la UE (crítico para políticas diferenciadas)
+
+    # Grupo GDPR para residentes UE
     if ($EUCountryCodes -contains $CountryCode) {
         $GroupsToAssign += "SG-GDPR-EUResidents"
-        Write-AuditLog "User $UserId identified as EU resident. Adding GDPR group." -Level "INFO"
+        Write-AuditLog "EU resident detected ($CountryCode). Adding to GDPR group." -Level "INFO"
     }
 
-    # --- Procesar cada grupo ---
     foreach ($GroupName in $GroupsToAssign) {
-
         try {
-            # Buscamos el grupo por displayName para obtener su ObjectId
-            # No hardcodeamos ObjectIds porque cambian entre tenants
             $Group = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction Stop
 
             if (-not $Group) {
-                Write-AuditLog "Group '$GroupName' not found in tenant. Skipping." -Level "ERROR"
-                continue  # Salta a la siguiente iteración del foreach
+                Write-AuditLog "Group '$GroupName' not found. Skipping." -Level "ERROR"
+                continue
             }
 
-            # Verificar si ya es miembro (idempotencia)
             $ExistingMember = Get-MgGroupMember -GroupId $Group.Id |
                               Where-Object { $_.Id -eq $UserId }
 
             if ($ExistingMember) {
-                Write-AuditLog "User $UserId already member of '$GroupName'. Skipping." -Level "WARNING"
+                Write-AuditLog "User already member of '$GroupName'. Skipping." -Level "WARNING"
                 continue
             }
 
-            # Construimos la referencia al usuario según la API de Graph
             $MemberRef = @{
                 "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$UserId"
             }
@@ -273,75 +244,54 @@ function Add-UserToGroups {
 }
 
 # ============================================================
-# REGION 6: MAIN EXECUTION BLOCK
+# REGION 6: MAIN EXECUTION
 # ============================================================
-# Aquí está el flujo principal. PowerShell usa el bloque principal
-# como punto de entrada. Todo lo anterior son definiciones (funciones),
-# esto es la ejecución real.
 
-# --- Crear directorio de logs si no existe ---
-$LogDir = Split-Path $Config.LogPath -Parent
-if (-not (Test-Path $LogDir)) {
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-}
 Write-AuditLog "=== ONBOARDING SESSION STARTED ===" -Level "INFO"
-Write-AuditLog "Operator initiating bulk onboarding process" -Level "INFO"
+Write-AuditLog "Log file: $($script:LogFile)" -Level "INFO"
 
-# --- Conectar a Microsoft Graph ---
-# Definimos SOLO los permisos que necesitamos (Least Privilege también para el script)
+# Conectar a Microsoft Graph con mínimos permisos necesarios
 $RequiredScopes = @(
-    "User.ReadWrite.All",       # Crear y editar usuarios
-    "GroupMember.ReadWrite.All" # Agregar miembros a grupos
+    "User.ReadWrite.All",
+    "GroupMember.ReadWrite.All"
 )
 
 try {
     Write-AuditLog "Connecting to Microsoft Graph..." -Level "INFO"
-
-    # Connect-MgGraph abre una ventana de autenticación interactiva.
-    # En producción, usarías -ClientId y -CertificateThumbprint (App Registration)
-    # Para el portfolio está bien el flujo interactivo.
     Connect-MgGraph -TenantId $Config.TenantId -Scopes $RequiredScopes -ErrorAction Stop
-    Write-AuditLog "Successfully authenticated to Microsoft Graph" -Level "SUCCESS"
-
+    Write-AuditLog "Authenticated as: $((Get-MgContext).Account)" -Level "SUCCESS"
 } catch {
-    Write-AuditLog "FATAL: Cannot connect to Microsoft Graph: $_" -Level "ERROR"
-    exit 1  # Terminamos el script. Sin conexión, nada funciona.
-}
-
-# --- Importar y validar CSV ---
-try {
-    # Import-Csv convierte cada fila en un PSCustomObject
-    # Cada columna del CSV se convierte en una propiedad del objeto
-    $Users = Import-Csv -Path $Config.CsvPath -ErrorAction Stop
-    Write-AuditLog "CSV loaded: $($Users.Count) users to process" -Level "INFO"
-
-} catch {
-    Write-AuditLog "FATAL: Cannot read CSV file: $_" -Level "ERROR"
+    Write-AuditLog "FATAL: Cannot connect to Graph: $_" -Level "ERROR"
     exit 1
 }
 
-# --- Contadores para el resumen final ---
+# Importar CSV
+try {
+    $Users = Import-Csv -Path $Config.CsvPath -ErrorAction Stop
+    Write-AuditLog "CSV loaded: $($Users.Count) users to process from $($Config.CsvPath)" -Level "INFO"
+} catch {
+    Write-AuditLog "FATAL: Cannot read CSV: $_" -Level "ERROR"
+    exit 1
+}
+
+# Contadores
 $Stats = @{ Success = 0; Skipped = 0; Failed = 0 }
 
-# --- Procesar cada usuario del CSV ---
+# Procesar cada usuario
 foreach ($UserRow in $Users) {
 
-    # Validación básica: campos obligatorios no pueden estar vacíos
-    # GDPR Art. 5(d) - Exactitud: no procesamos datos incompletos
     $RequiredFields = @("FirstName", "LastName", "Department", "Country", "CountryCode")
-    $MissingFields = $RequiredFields | Where-Object { [string]::IsNullOrWhiteSpace($UserRow.$_) }
+    $MissingFields  = $RequiredFields | Where-Object { [string]::IsNullOrWhiteSpace($UserRow.$_) }
 
     if ($MissingFields) {
-        Write-AuditLog "Skipping row: missing fields [$($MissingFields -join ', ')] for $($UserRow.FirstName) $($UserRow.LastName)" -Level "WARNING"
+        Write-AuditLog "Skipping incomplete row: missing [$($MissingFields -join ', ')] for $($UserRow.FirstName) $($UserRow.LastName)" -Level "WARNING"
         $Stats.Skipped++
         continue
     }
 
-    # Crear usuario
     $NewUser = New-OnboardingUser -UserData $UserRow
 
     if ($NewUser) {
-        # Si el usuario fue creado (o ya existía), asignar grupos
         Add-UserToGroups -UserId $NewUser.Id `
                          -Department $UserRow.Department `
                          -CountryCode $UserRow.CountryCode.Trim().ToUpper()
@@ -350,16 +300,13 @@ foreach ($UserRow in $Users) {
         $Stats.Failed++
     }
 
-    # Pequeña pausa para no saturar los rate limits de Graph API
-    # Microsoft Graph tiene límites de solicitudes por segundo
     Start-Sleep -Milliseconds 500
 }
 
-# --- Resumen final en el log ---
+# Resumen final
 Write-AuditLog "=== ONBOARDING SESSION COMPLETED ===" -Level "INFO"
 Write-AuditLog "Results — Success: $($Stats.Success) | Skipped: $($Stats.Skipped) | Failed: $($Stats.Failed)" -Level "INFO"
-Write-AuditLog "Audit log saved to: $($Config.LogPath)" -Level "INFO"
+Write-AuditLog "Audit log: $($script:LogFile)" -Level "INFO"
 
-# Desconectar sesión de Graph (buena práctica de seguridad)
 Disconnect-MgGraph
-Write-AuditLog "Microsoft Graph session disconnected." -Level "INFO"
+Write-AuditLog "Graph session disconnected." -Level "INFO"
