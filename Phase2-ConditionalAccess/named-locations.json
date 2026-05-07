@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Allowed-Region-Chile",
+    "countriesAndRegions": ["CL"],
+    "includeUnknownCountriesAndRegions": false
+  },
+  {
+    "name": "Allowed-Region-EuropeanUnion",
+    "countriesAndRegions": ["DE", "FR", "IT", "ES", "PT", "NL", "BE", "AT", "PL", "SE"],
+    "includeUnknownCountriesAndRegions": false
+  }
+]
