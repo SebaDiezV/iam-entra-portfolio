@@ -52,7 +52,7 @@ PowerShell Automation (Microsoft Graph API)
 | Phase | Topic | Status |
 |---|---|---|
 | **Phase 1** | Automated User Onboarding & IGA Foundations | ✅ Complete |
-| Phase 2 | Conditional Access Policies | 🔄 In Progress |
+| Phase 2 | Conditional Access Policies | ✅ Complete |
 | Phase 3 | Privileged Identity Management (PIM) | 📋 Planned |
 | Phase 4 | Access Reviews & Lifecycle Automation | 📋 Planned |
 
