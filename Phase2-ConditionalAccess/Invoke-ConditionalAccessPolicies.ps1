@@ -78,31 +78,28 @@ function New-NamedLocations {
     Write-AuditLog "Loading named locations from: $JsonPath"
 
     $Locations    = Get-Content $JsonPath | ConvertFrom-Json
-    # Hashtable que retornamos al final: nombre → ID
-    # Lo usaremos para referenciar ubicaciones en las políticas
     $LocationsMap = @{}
+
+    # FIX: traer TODAS las ubicaciones existentes de una vez
+    # y filtrar en PowerShell — más confiable que -Filter en Graph
+    $ExistingLocations = Get-MgIdentityConditionalAccessNamedLocation -All
 
     foreach ($Location in $Locations) {
 
-        # Verificar si ya existe para mantener idempotencia
-        # -Filter hace la búsqueda directamente en Graph, más eficiente que traer todo
-        $Existing = Get-MgIdentityConditionalAccessNamedLocation `
-                    -Filter "displayName eq '$($Location.name)'" `
-                    -ErrorAction SilentlyContinue
+        # Buscar por nombre en la lista que ya tenemos en memoria
+        $Existing = $ExistingLocations | Where-Object { $_.DisplayName -eq $Location.name }
 
         if ($Existing) {
-            Write-AuditLog "Named Location '$($Location.name)' already exists. Using existing." -Level "WARNING"
+            Write-AuditLog "Named Location '$($Location.name)' already exists | Id: $($Existing.Id)" -Level "WARNING"
+            # FIX: guardamos el ID correctamente en el mapa
             $LocationsMap[$Location.name] = $Existing.Id
             continue
         }
 
-        # Construimos el body según la API de Graph para CountryNamedLocation
-        # @odata.type indica a Graph qué tipo de objeto estamos creando
-        # Graph usa herencia de tipos — hay IP locations y Country locations
         $Body = @{
-            "@odata.type"                    = "#microsoft.graph.countryNamedLocation"
-            displayName                      = $Location.name
-            countriesAndRegions              = $Location.countriesAndRegions
+            "@odata.type"                     = "#microsoft.graph.countryNamedLocation"
+            displayName                       = $Location.name
+            countriesAndRegions               = $Location.countriesAndRegions
             includeUnknownCountriesAndRegions = $Location.includeUnknownCountriesAndRegions
         }
 
@@ -111,7 +108,14 @@ function New-NamedLocations {
             Write-AuditLog "Named Location created: '$($Location.name)' | Id: $($NewLocation.Id)" -Level "SUCCESS"
             $LocationsMap[$Location.name] = $NewLocation.Id
         } catch {
-            Write-AuditLog "FAILED to create location '$($Location.name)': $($_.Exception.Message)" -Level "ERROR"
+            Write-AuditLog "FAILED to create '$($Location.name)': $($_.Exception.Message)" -Level "ERROR"
+        }
+    }
+
+    # FIX: verificar que el mapa quedó completo antes de retornar
+    foreach ($Location in $Locations) {
+        if (-not $LocationsMap.ContainsKey($Location.name)) {
+            Write-AuditLog "WARNING: Location '$($Location.name)' missing from map. CA-002 may fail." -Level "ERROR"
         }
     }
 
