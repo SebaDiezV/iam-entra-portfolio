@@ -1,0 +1,26 @@
+[
+  {
+    "roleName": "User Administrator",
+    "justification": "IAM Portfolio - JIT access for user lifecycle management",
+    "maxActivationDuration": "PT2H",
+    "requireMFA": true,
+    "requireJustification": true,
+    "requireTicketInfo": false
+  },
+  {
+    "roleName": "Security Reader",
+    "justification": "IAM Portfolio - JIT access for security monitoring",
+    "maxActivationDuration": "PT4H",
+    "requireMFA": false,
+    "requireJustification": true,
+    "requireTicketInfo": false
+  },
+  {
+    "roleName": "Helpdesk Administrator",
+    "justification": "IAM Portfolio - JIT access for helpdesk operations",
+    "maxActivationDuration": "PT2H",
+    "requireMFA": true,
+    "requireJustification": true,
+    "requireTicketInfo": false
+  }
+]
