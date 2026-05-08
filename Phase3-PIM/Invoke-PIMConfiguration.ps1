@@ -117,80 +117,62 @@ function Set-PIMRoleSettings {
         [string]$RoleName,
         [bool]$RequireMFA,
         [bool]$RequireJustification,
-        [string]$MaxActivationDuration  # ISO 8601: PT2H, PT4H, etc.
+        [string]$MaxActivationDuration
     )
 
     Write-AuditLog "Configuring PIM settings for role: '$RoleName'"
 
     try {
-        # Primero obtenemos la política asociada a este rol en el tenant
-        # Cada rol tiene exactamente UNA política de gestión en el scope del tenant
+        # Obtener la política asociada al rol
         $PolicyAssignment = Get-MgPolicyRoleManagementPolicyAssignment `
             -Filter "scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq '$RoleDefinitionId'" `
             -ExpandProperty "policy(`$expand=rules)" `
             -ErrorAction Stop
 
         if (-not $PolicyAssignment) {
-            Write-AuditLog "No policy found for role '$RoleName'. Skipping settings." -Level "WARNING"
+            Write-AuditLog "No policy found for '$RoleName'. Skipping." -Level "WARNING"
             return
         }
 
         $PolicyId = $PolicyAssignment.PolicyId
-        $Rules    = $PolicyAssignment.Policy.Rules
 
-        # Las políticas PIM tienen múltiples reglas de distintos tipos.
-        # Necesitamos modificar 3 reglas específicas:
-        # 1. Enablement rules    → qué debe hacer el usuario al activar
-        # 2. Expiration rules    → cuánto tiempo máximo puede estar activo
-        # 3. Notification rules  → quién recibe alertas (las dejamos por defecto)
+        # FIX: modificar reglas individualmente en lugar de enviar el conjunto
+        # Cada regla se actualiza con su propio endpoint PATCH
 
-        $UpdatedRules = @()
+        # Regla 1: Enablement (MFA + Justification)
+        $EnabledControls = @()
+        if ($RequireMFA)           { $EnabledControls += "MultiFactorAuthentication" }
+        if ($RequireJustification) { $EnabledControls += "Justification" }
 
-        foreach ($Rule in $Rules) {
-
-            # Regla de habilitación: MFA y justificación
-            # @odata.type identifica el tipo de regla en el esquema de Graph
-            if ($Rule.AdditionalProperties["@odata.type"] -eq "#microsoft.graph.unifiedRoleManagementPolicyEnablementRule" `
-                -and $Rule.Id -eq "Enablement_EndUser_Assignment") {
-
-                # Construimos la lista de controles requeridos dinámicamente
-                $EnabledControls = @()
-                if ($RequireMFA)           { $EnabledControls += "MultiFactorAuthentication" }
-                if ($RequireJustification) { $EnabledControls += "Justification" }
-
-                $UpdatedRules += @{
-                    "@odata.type"    = "#microsoft.graph.unifiedRoleManagementPolicyEnablementRule"
-                    "id"             = "Enablement_EndUser_Assignment"
-                    "enabledControls" = $EnabledControls
-                }
-
-                Write-AuditLog "  MFA required: $RequireMFA | Justification required: $RequireJustification"
-            }
-
-            # Regla de expiración: duración máxima de activación
-            elseif ($Rule.AdditionalProperties["@odata.type"] -eq "#microsoft.graph.unifiedRoleManagementPolicyExpirationRule" `
-                    -and $Rule.Id -eq "Expiration_EndUser_Assignment") {
-
-                $UpdatedRules += @{
-                    "@odata.type"     = "#microsoft.graph.unifiedRoleManagementPolicyExpirationRule"
-                    "id"              = "Expiration_EndUser_Assignment"
-                    "isExpirationRequired" = $true
-                    "maximumDuration" = $MaxActivationDuration
-                }
-
-                Write-AuditLog "  Max activation duration: $MaxActivationDuration"
-            }
+        $EnablementRule = @{
+            "@odata.type"     = "#microsoft.graph.unifiedRoleManagementPolicyEnablementRule"
+            "id"              = "Enablement_EndUser_Assignment"
+            "enabledControls" = $EnabledControls
         }
 
-        # Aplicar las reglas actualizadas a la política
-        if ($UpdatedRules.Count -gt 0) {
-            Update-MgPolicyRoleManagementPolicy `
-                -UnifiedRoleManagementPolicyId $PolicyId `
-                -Rules $UpdatedRules `
-                -ErrorAction Stop
+        Update-MgPolicyRoleManagementPolicyRule `
+            -UnifiedRoleManagementPolicyId $PolicyId `
+            -UnifiedRoleManagementPolicyRuleId "Enablement_EndUser_Assignment" `
+            -BodyParameter $EnablementRule `
+            -ErrorAction Stop
 
-            Write-AuditLog "PIM settings updated for '$RoleName'" -Level "SUCCESS"
+        Write-AuditLog "  Enablement rule updated — MFA: $RequireMFA | Justification: $RequireJustification" -Level "SUCCESS"
+
+        # Regla 2: Expiration (duración máxima)
+        $ExpirationRule = @{
+            "@odata.type"          = "#microsoft.graph.unifiedRoleManagementPolicyExpirationRule"
+            "id"                   = "Expiration_EndUser_Assignment"
+            "isExpirationRequired" = $true
+            "maximumDuration"      = $MaxActivationDuration
         }
+
+        Update-MgPolicyRoleManagementPolicyRule `
+            -UnifiedRoleManagementPolicyId $PolicyId `
+            -UnifiedRoleManagementPolicyRuleId "Expiration_EndUser_Assignment" `
+            -BodyParameter $ExpirationRule `
+            -ErrorAction Stop
+
+        Write-AuditLog "  Expiration rule updated — Max duration: $MaxActivationDuration" -Level "SUCCESS"
 
     } catch {
         Write-AuditLog "FAILED to configure settings for '$RoleName': $($_.Exception.Message)" -Level "ERROR"
