@@ -137,20 +137,11 @@ function New-RecurrencePattern {
 # ----------------------------------------------------------
 # AR-001: Review de grupos sensibles (Finance y Legal)
 # ----------------------------------------------------------
-# Estos grupos contienen usuarios que manejan datos personales.
-# GDPR Art. 5(1)(e): los accesos deben revisarse periódicamente.
-# El manager de cada usuario es el revisor natural — conoce
-# si el empleado aún necesita ese acceso.
-#
-# defaultDecision "Deny": si el manager no responde en 7 días,
-# el acceso se revoca automáticamente. Seguro por defecto.
-
 function New-AR001-GroupReview {
     param([array]$GroupNames)
 
     $ReviewName = "AR-001-Monthly-Review-SensitiveDepts"
 
-    # Idempotencia: verificar si ya existe
     $Existing = Get-MgIdentityGovernanceAccessReviewDefinition -All |
                 Where-Object { $_.DisplayName -eq $ReviewName }
     if ($Existing) {
@@ -158,141 +149,40 @@ function New-AR001-GroupReview {
         return
     }
 
-    # Construimos el scope para múltiples grupos
-    # Graph API acepta un scope de tipo "accessReviewQueryScope"
-    # con una query que filtra los recursos a revisar
-    $GroupIds   = $GroupNames | ForEach-Object { Get-GroupId -GroupName $_ } |
-                  Where-Object { $_ -ne $null }
-
-    if ($GroupIds.Count -eq 0) {
+    # FIX: usar el primer grupo como scope principal
+    # Graph API de Access Reviews solo acepta un scope por definición
+    # Para múltiples grupos se crean instancias separadas o se usa
+    # el grupo padre — simplificamos al grupo más crítico (Finance)
+    $GroupId = Get-GroupId -GroupName $GroupNames[0]
+    if (-not $GroupId) {
         Write-AuditLog "No valid groups found for AR-001. Skipping." -Level "ERROR"
         return
     }
 
-    # Para revisar múltiples grupos usamos un scope combinado
-    # Cada grupo genera su propio "instance scope"
-    $Scopes = $GroupIds | ForEach-Object {
-        @{
-            "@odata.type" = "#microsoft.graph.accessReviewQueryScope"
-            query         = "/groups/$_/members"
-            queryType     = "MicrosoftGraph"
-        }
+    $AdminId = Get-UserId -UPN $Config.AdminReviewerUPN
+    if (-not $AdminId) {
+        Write-AuditLog "Admin reviewer not found for AR-001. Skipping." -Level "ERROR"
+        return
     }
 
     $ReviewBody = @{
         displayName             = $ReviewName
         descriptionForAdmins    = "Monthly review of Finance and Legal group memberships - GDPR Art. 5(1)(e)"
-        descriptionForReviewers = "Please review and confirm that each user still requires access to this group. Deny if unsure."
-
-        # Scope: qué se revisa
-        # principalScopes define a quién aplica (todos los miembros)
-        scope = @{
-            "@odata.type" = "#microsoft.graph.accessReviewQueryScope"
-            query         = "/groups/$($GroupIds[0])/members"
-            queryType     = "MicrosoftGraph"
-        }
-
-        # Reviewers: quién revisa
-        # "managers" significa que el manager de cada usuario es el revisor
-        # Si un usuario no tiene manager, el fallback es el admin del tenant
-        reviewers = @(
-            @{
-                query     = "./manager"
-                queryType = "MicrosoftGraph"
-            }
-        )
-
-        # Fallback reviewer si el usuario no tiene manager asignado
-        fallbackReviewers = @(
-            @{
-                query     = "/users/$((Get-UserId -UPN $Config.AdminReviewerUPN))"
-                queryType = "MicrosoftGraph"
-            }
-        )
-
-        settings = @{
-            # Cuánto tiempo tienen los revisores para responder
-            instanceDurationInDays  = 7
-
-            # Qué pasa si el reviewer no responde → Deny = revocar acceso
-            # GDPR: el acceso se revoca si no se certifica activamente
-            defaultDecisionEnabled  = $true
-            defaultDecision         = "Deny"
-
-            # Aplicar resultados automáticamente al cerrar el review
-            # Sin esto, alguien tendría que aplicar los cambios manualmente
-            autoApplyDecisionsEnabled = $true
-
-            # Mostrar recomendaciones al reviewer basadas en actividad del usuario
-            # Si el usuario no ha iniciado sesión en 30 días → recomendación: Deny
-            recommendationsEnabled  = $true
-
-            # Justificación requerida para cada decisión
-            # Crea un rastro auditable de por qué se aprobó o denegó
-            justificationRequiredOnApproval = $true
-
-            recurrence = New-RecurrencePattern -RecurrenceType "absoluteMonthly"
-        }
-    }
-
-    try {
-        $Review = New-MgIdentityGovernanceAccessReviewDefinition -BodyParameter $ReviewBody
-        Write-AuditLog "Access Review created: '$ReviewName' | Id: $($Review.Id)" -Level "SUCCESS"
-    } catch {
-        Write-AuditLog "FAILED to create '$ReviewName': $($_.Exception.Message)" -Level "ERROR"
-    }
-}
-
-# ----------------------------------------------------------
-# AR-002: Review de roles PIM elegibles
-# ----------------------------------------------------------
-# Los roles configurados en Fase 3 necesitan revisión periódica.
-# ¿Sigue siendo necesario que este usuario tenga este rol elegible?
-# El propio usuario es el revisor (self-review) — debe justificar
-# por qué aún necesita acceso a ese rol.
-#
-# En producción, roles críticos como Global Administrator tendrían
-# un revisor externo (su manager), no self-review.
-
-function New-AR002-PIMRoleReview {
-    param([array]$RoleNames)
-
-    $ReviewName = "AR-002-Monthly-Review-PIMRoles"
-
-    $Existing = Get-MgIdentityGovernanceAccessReviewDefinition -All |
-                Where-Object { $_.DisplayName -eq $ReviewName }
-    if ($Existing) {
-        Write-AuditLog "Review '$ReviewName' already exists. Skipping." -Level "WARNING"
-        return
-    }
-
-    # Para roles de directorio, el scope usa un query diferente
-    # apuntando al roleAssignmentScheduleInstances de cada rol
-    $RoleIds = $RoleNames | ForEach-Object { Get-RoleDefinitionId -RoleName $_ } |
-               Where-Object { $_ -ne $null }
-
-    if ($RoleIds.Count -eq 0) {
-        Write-AuditLog "No valid roles found for AR-002. Skipping." -Level "ERROR"
-        return
-    }
-
-    $ReviewBody = @{
-        displayName          = $ReviewName
-        descriptionForAdmins = "Monthly review of PIM eligible role assignments - GDPR Art. 32"
-        descriptionForReviewers = "Confirm you still require this privileged role. Deny if no longer needed."
+        descriptionForReviewers = "Confirm each user still requires access. Deny if no longer needed."
 
         scope = @{
             "@odata.type" = "#microsoft.graph.accessReviewQueryScope"
-            # Query que apunta a las asignaciones elegibles de roles de directorio
-            query         = "/roleManagement/directory/roleEligibilityScheduleInstances?`$expand=roleDefinition&`$filter=roleDefinitionId eq '$($RoleIds[0])'"
+            # FIX: query correcto para miembros de un grupo específico
+            query         = "/groups/$GroupId/transitiveMembers"
             queryType     = "MicrosoftGraph"
         }
 
-        # Self-review: el propio usuario revisa su acceso
-        # Apropiado para roles de menor criticidad
+        # FIX: reviewer explícito en lugar de ./manager
+        # En tenant de evaluación los usuarios no tienen manager asignado
+        # En producción: usar managers con fallback al admin
         reviewers = @(
             @{
-                query     = "/users/$((Get-UserId -UPN $Config.AdminReviewerUPN))"
+                query     = "/users/$AdminId"
                 queryType = "MicrosoftGraph"
             }
         )
@@ -317,16 +207,74 @@ function New-AR002-PIMRoleReview {
 }
 
 # ----------------------------------------------------------
-# AR-003: Review de usuarios inactivos
+# AR-002: Review de roles PIM elegibles
 # ----------------------------------------------------------
-# Usuarios que no han iniciado sesión en mucho tiempo son un riesgo.
-# Pueden ser exempleados, cuentas de servicio olvidadas, o cuentas
-# comprometidas que el atacante no usa frecuentemente para no alertar.
-#
-# GDPR Art. 5(1)(e): los datos personales (incluyendo cuentas de usuario)
-# no deben mantenerse más tiempo del necesario.
-# Una cuenta inactiva = dato personal sin propósito activo = debe revisarse.
+function New-AR002-PIMRoleReview {
+    param([array]$RoleNames)
 
+    $ReviewName = "AR-002-Monthly-Review-PIMRoles"
+
+    $Existing = Get-MgIdentityGovernanceAccessReviewDefinition -All |
+                Where-Object { $_.DisplayName -eq $ReviewName }
+    if ($Existing) {
+        Write-AuditLog "Review '$ReviewName' already exists. Skipping." -Level "WARNING"
+        return
+    }
+
+    $AdminId = Get-UserId -UPN $Config.AdminReviewerUPN
+    if (-not $AdminId) {
+        Write-AuditLog "Admin reviewer not found for AR-002. Skipping." -Level "ERROR"
+        return
+    }
+
+    $RoleId = Get-RoleDefinitionId -RoleName $RoleNames[0]
+    if (-not $RoleId) {
+        Write-AuditLog "No valid roles found for AR-002. Skipping." -Level "ERROR"
+        return
+    }
+
+    $ReviewBody = @{
+        displayName             = $ReviewName
+        descriptionForAdmins    = "Monthly review of PIM eligible role assignments - GDPR Art. 32"
+        descriptionForReviewers = "Confirm you still require this privileged role. Deny if no longer needed."
+
+        scope = @{
+            "@odata.type" = "#microsoft.graph.accessReviewQueryScope"
+            # FIX: query correcto para asignaciones de roles de directorio
+            # Filtra usuarios asignados a un rol específico
+            query         = "/roleManagement/directory/roleAssignmentScheduleInstances?`$filter=roleDefinitionId eq '$RoleId'"
+            queryType     = "MicrosoftGraph"
+        }
+
+        reviewers = @(
+            @{
+                query     = "/users/$AdminId"
+                queryType = "MicrosoftGraph"
+            }
+        )
+
+        settings = @{
+            instanceDurationInDays          = 7
+            defaultDecisionEnabled          = $true
+            defaultDecision                 = "Deny"
+            autoApplyDecisionsEnabled       = $true
+            recommendationsEnabled          = $true
+            justificationRequiredOnApproval = $true
+            recurrence                      = New-RecurrencePattern -RecurrenceType "absoluteMonthly"
+        }
+    }
+
+    try {
+        $Review = New-MgIdentityGovernanceAccessReviewDefinition -BodyParameter $ReviewBody
+        Write-AuditLog "Access Review created: '$ReviewName' | Id: $($Review.Id)" -Level "SUCCESS"
+    } catch {
+        Write-AuditLog "FAILED to create '$ReviewName': $($_.Exception.Message)" -Level "ERROR"
+    }
+}
+
+# ----------------------------------------------------------
+# AR-003: Review de usuarios guest e inactivos
+# ----------------------------------------------------------
 function New-AR003-InactiveUsersReview {
 
     $ReviewName = "AR-003-Monthly-Review-InactiveUsers"
@@ -340,24 +288,23 @@ function New-AR003-InactiveUsersReview {
 
     $AdminId = Get-UserId -UPN $Config.AdminReviewerUPN
     if (-not $AdminId) {
-        Write-AuditLog "Admin reviewer not found. Skipping AR-003." -Level "ERROR"
+        Write-AuditLog "Admin reviewer not found for AR-003. Skipping." -Level "ERROR"
         return
     }
 
     $ReviewBody = @{
-        displayName          = $ReviewName
-        descriptionForAdmins = "Monthly review of all tenant users for inactivity - GDPR Art. 5(1)(e)"
-        descriptionForReviewers = "Review inactive users. Deny access for accounts no longer required."
+        displayName             = $ReviewName
+        descriptionForAdmins    = "Monthly review of inactive users - GDPR Art. 5(1)(e)"
+        descriptionForReviewers = "Review inactive accounts. Deny access for accounts no longer required."
 
-        # Scope: todos los usuarios del tenant
         scope = @{
             "@odata.type" = "#microsoft.graph.accessReviewQueryScope"
-            query         = "/users"
+            # FIX: query correcto — filtra usuarios por tipo Member
+            # Graph solo acepta queries específicos para usuarios en Access Reviews
+            query         = "/users?`$filter=userType eq 'Member'"
             queryType     = "MicrosoftGraph"
         }
 
-        # Revisor: el administrador IAM
-        # En producción: HR + managers + Security team
         reviewers = @(
             @{
                 query     = "/users/$AdminId"
@@ -368,11 +315,8 @@ function New-AR003-InactiveUsersReview {
         settings = @{
             instanceDurationInDays          = 7
             defaultDecisionEnabled          = $true
-            # Para usuarios: si nadie certifica la cuenta → se deshabilita
             defaultDecision                 = "Deny"
             autoApplyDecisionsEnabled       = $true
-            # Las recomendaciones son especialmente útiles aquí:
-            # Entra ID sugiere "Deny" para usuarios sin actividad reciente
             recommendationsEnabled          = $true
             justificationRequiredOnApproval = $true
             recurrence                      = New-RecurrencePattern -RecurrenceType "absoluteMonthly"
