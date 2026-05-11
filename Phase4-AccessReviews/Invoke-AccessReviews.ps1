@@ -269,6 +269,7 @@ function New-AR002-PIMRoleReview {
         Write-AuditLog "Access Review created: '$ReviewName' | Id: $($Review.Id)" -Level "SUCCESS"
     } catch {
         Write-AuditLog "FAILED to create '$ReviewName': $($_.Exception.Message)" -Level "ERROR"
+        Write-AuditLog "NOTE: This review type requires a linked Azure subscription (Jan 2026 policy)." -Level "WARNING"
     }
 }
 
@@ -328,6 +329,7 @@ function New-AR003-InactiveUsersReview {
         Write-AuditLog "Access Review created: '$ReviewName' | Id: $($Review.Id)" -Level "SUCCESS"
     } catch {
         Write-AuditLog "FAILED to create '$ReviewName': $($_.Exception.Message)" -Level "ERROR"
+        Write-AuditLog "NOTE: This review type requires a linked Azure subscription (Jan 2026 policy)." -Level "WARNING"
     }
 }
 
