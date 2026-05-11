@@ -1,0 +1,34 @@
+[
+  {
+    "name": "AR-001-Monthly-Review-SensitiveDepts",
+    "description": "Monthly access review for Finance and Legal groups - GDPR Art. 5(1)(e)",
+    "scope": "groups",
+    "groupNames": ["SG-Finance-Users", "SG-Legal-Users"],
+    "durationInDays": 7,
+    "recurrenceType": "monthly",
+    "defaultDecision": "Deny",
+    "autoApplyResults": true,
+    "reviewerType": "managers"
+  },
+  {
+    "name": "AR-002-Monthly-Review-PIMRoles",
+    "description": "Monthly review of PIM eligible role assignments - GDPR Art. 32",
+    "scope": "roles",
+    "roleNames": ["User Administrator", "Security Reader", "Helpdesk Administrator"],
+    "durationInDays": 7,
+    "recurrenceType": "monthly",
+    "defaultDecision": "Deny",
+    "autoApplyResults": true,
+    "reviewerType": "self"
+  },
+  {
+    "name": "AR-003-Monthly-Review-InactiveUsers",
+    "description": "Monthly review of inactive users across tenant - GDPR Art. 5(1)(e)",
+    "scope": "users",
+    "durationInDays": 7,
+    "recurrenceType": "monthly",
+    "defaultDecision": "Deny",
+    "autoApplyResults": true,
+    "reviewerType": "admin"
+  }
+]
