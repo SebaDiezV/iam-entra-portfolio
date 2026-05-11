@@ -54,7 +54,7 @@ PowerShell Automation (Microsoft Graph API)
 | **Phase 1** | Automated User Onboarding & IGA Foundations | ✅ Complete |
 | Phase 2 | Conditional Access Policies | ✅ Complete |
 | Phase 3 | Privileged Identity Management (PIM) | ✅ Complete |
-| Phase 4 | Access Reviews & Lifecycle Automation | 📋 Planned |
+| Phase 4 | Access Reviews & Lifecycle Automation | ✅ Complete |
 
 ---
 
@@ -236,7 +236,7 @@ iam-entra-portfolio/
 - [x] Phase 1 — Automated Onboarding with GDPR audit logging
 - [x] Phase 2 — Conditional Access Policies (MFA enforcement, location-based access)
 - [x] Phase 3 — Privileged Identity Management (Just-in-Time access with PIM)
-- [ ] Phase 4 — Access Reviews & automated lifecycle management
+- [x] Phase 4 — Access Reviews & automated lifecycle management
 
 ---
 
