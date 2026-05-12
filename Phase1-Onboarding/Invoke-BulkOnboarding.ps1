@@ -43,7 +43,7 @@ if (-not (Test-Path $script:LogDir)) {
 New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 
 $Config = @{
-    TenantId       = "25de3db3-c870-4699-be4e-bc4322e9d249"
+    TenantId       = "YOUR-TENANT-ID-HERE"
     CsvPath        = Join-Path $PSScriptRoot "sample-users.csv"  # ruta absoluta
     DefaultDomain  = "proyectoiam.onmicrosoft.com"
     PasswordLength = 16
